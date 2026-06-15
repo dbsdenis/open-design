@@ -37,6 +37,7 @@ export function openDatabase(projectRoot: string, { dataDir }: { dataDir?: strin
   fs.mkdirSync(dir, { recursive: true });
   const db = new Database(file);
   db.pragma('journal_mode = WAL');
+  db.pragma('busy_timeout = 5000');
   db.pragma('foreign_keys = ON');
   migrate(db);
   dbInstance = db;
