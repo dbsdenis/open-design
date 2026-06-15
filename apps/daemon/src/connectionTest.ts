@@ -199,6 +199,13 @@ export async function assertAndFetchExternalAsset(
 // Override with OD_CONNECTION_TEST_PROVIDER_TIMEOUT_MS for slow networks
 // or distant providers; invalid values fall back to the default.
 const DEFAULT_PROVIDER_TIMEOUT_MS = 12_000;
+// A self-hosted Ollama cold-loads the requested model into RAM/VRAM on the
+// first /api/chat call; a multi-GB model regularly takes far longer than the
+// 12 s cloud budget just to finish loading before it can emit a single token.
+// Give loopback Ollama the same generous headroom the CLI agents get for their
+// own cold first run, so a healthy local model isn't reported as a timeout.
+// The explicit OD_CONNECTION_TEST_PROVIDER_TIMEOUT_MS override still wins.
+const DEFAULT_LOCAL_OLLAMA_TIMEOUT_MS = 60_000;
 const LOOPBACK_NO_PROXY_TOKENS = ['localhost', '127.0.0.1', '[::1]'] as const;
 // CLI boot time is dominated by adapter auth/session restore; the heavy
 // adapters (Codex, Cursor Agent) regularly take 5–10 s on a cold first
@@ -231,10 +238,20 @@ export function resolveConnectionTestTimeoutMs(
   return n;
 }
 
-function providerTimeoutMs(): number {
+// A loopback Ollama must cold-load the requested model before it can answer the
+// smoke prompt, so it gets the larger local budget; every other provider keeps
+// the aggressive cloud budget. The explicit OD_CONNECTION_TEST_PROVIDER_TIMEOUT_MS
+// override still takes precedence over whichever default we pick.
+export function resolveProviderTimeoutMs(
+  protocol: string,
+  hostname: string,
+  env: NodeJS.ProcessEnv = process.env,
+): number {
+  const isLocalOllama = protocol === 'ollama' && isLoopbackApiHost(hostname);
   return resolveConnectionTestTimeoutMs(
     'OD_CONNECTION_TEST_PROVIDER_TIMEOUT_MS',
-    DEFAULT_PROVIDER_TIMEOUT_MS,
+    isLocalOllama ? DEFAULT_LOCAL_OLLAMA_TIMEOUT_MS : DEFAULT_PROVIDER_TIMEOUT_MS,
+    env,
   );
 }
 
@@ -1278,7 +1295,10 @@ export async function testProviderConnection(
   } else {
     input.signal?.addEventListener('abort', abortFromParent, { once: true });
   }
-  const timer = setTimeout(() => controller.abort(), providerTimeoutMs());
+  const timer = setTimeout(
+    () => controller.abort(),
+    resolveProviderTimeoutMs(normalizedInput.protocol, validated.parsed.hostname),
+  );
   let proxyDispatcher: ReturnType<typeof proxyDispatcherRequestInit> | null = null;
 
   try {

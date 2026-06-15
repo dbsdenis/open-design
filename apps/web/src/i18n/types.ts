@@ -2970,6 +2970,15 @@ export interface Dict {
   'qf.cardSelected': string;
   'qf.cardRefs': string;
   'qf.cardSampleText': string;
+  'qf.useSuggestion': string;
+  'qf.tipPrototype': string;
+  'qf.tipLiveArtifact': string;
+  'qf.tipSlideDeck': string;
+  'qf.tipImage': string;
+  'qf.tipVideo': string;
+  'qf.tipHyperFrames': string;
+  'qf.tipAudio': string;
+  'qf.tipOther': string;
   'questions.tabLabel': string;
   'questions.banner': string;
   'questions.bannerAnswered': string;

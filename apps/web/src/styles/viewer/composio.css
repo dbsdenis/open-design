@@ -893,6 +893,22 @@
 .qf-textarea {
   font-size: 13px;
 }
+.qf-suggest-btn {
+  align-self: flex-start;
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--bg-panel);
+  color: var(--text-muted);
+  font-size: 11px;
+  cursor: pointer;
+  transition: border-color 120ms var(--ease-out), color 120ms var(--ease-out),
+    background 120ms var(--ease-out);
+}
+.qf-suggest-btn:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
 .question-form-foot {
   display: flex;
   align-items: center;

@@ -33,6 +33,7 @@ import {
 import { isSafeId as isSafeProjectId } from './projects.js';
 import { projectKindToTracking } from '@open-design/contracts/analytics';
 import { proxyDispatcherRequestInit, validateBaseUrlResolved } from './connectionTest.js';
+import { isLoopbackApiHost, validateBaseUrl } from '@open-design/contracts/api/connectionTest';
 import { googleStreamGenerateContentUrl } from './google-models.js';
 import { createRoleMarkerGuard } from './role-marker-guard.js';
 
@@ -293,19 +294,29 @@ export function registerChatRoutes(app: Express, ctx: RegisterChatRoutesDeps) {
             'protocol must be one of anthropic|openai|azure|google|ollama|senseaudio|aihubmix',
           );
         }
+        // Self-hosted Ollama doesn't gate /api/chat behind a bearer token, so
+        // a loopback baseUrl shouldn't force the user to paste a fake key
+        // (mirrors `byokProviderRequiresApiKey` in SettingsDialog.tsx).
+        const apiKeyRequired = !(
+          protocol === 'ollama' &&
+          typeof body.baseUrl === 'string' &&
+          isLoopbackApiHost(validateBaseUrl(body.baseUrl).parsed?.hostname ?? '')
+        );
         if (
           typeof body.baseUrl !== 'string' ||
           typeof body.apiKey !== 'string' ||
           typeof body.model !== 'string' ||
           !body.baseUrl.trim() ||
-          !body.apiKey.trim() ||
+          (apiKeyRequired && !body.apiKey.trim()) ||
           !body.model.trim()
         ) {
           return sendApiError(
             res,
             400,
             'BAD_REQUEST',
-            'baseUrl, apiKey, and model are required',
+            apiKeyRequired
+              ? 'baseUrl, apiKey, and model are required'
+              : 'baseUrl and model are required',
           );
         }
         try {

@@ -48,6 +48,31 @@ export const QuestionFormView = forwardRef<QuestionFormHandle, Props>(function Q
   ref,
 ) {
   const t = useT();
+  // Curated, localized hover help for the canonical router options. The
+  // task-type form ships its options as bare strings (no per-option
+  // description), so without this the chips have nothing to explain
+  // "Live artifact" / "HyperFrames" / etc. A model-emitted `description`
+  // always wins; this only fills the gap for the stable router labels
+  // (which stay English by the discovery prompt's authoring rules).
+  const optionTooltip = useMemo(() => {
+    const taskTypeTips: Record<string, string> = {
+      prototype: t('qf.tipPrototype'),
+      'live artifact': t('qf.tipLiveArtifact'),
+      'slide deck': t('qf.tipSlideDeck'),
+      image: t('qf.tipImage'),
+      video: t('qf.tipVideo'),
+      hyperframes: t('qf.tipHyperFrames'),
+      audio: t('qf.tipAudio'),
+      other: t('qf.tipOther'),
+    };
+    return (questionId: string, opt: FormOption): string | undefined => {
+      if (opt.description) return opt.description;
+      if (questionId !== 'taskType') return undefined;
+      return (
+        taskTypeTips[opt.value.toLowerCase()] ?? taskTypeTips[opt.label.toLowerCase()]
+      );
+    };
+  }, [t]);
   const initial = useMemo(
     () => buildInitialState(form, submittedAnswers ?? draftAnswers),
     [form, submittedAnswers, draftAnswers],
@@ -166,7 +191,7 @@ export const QuestionFormView = forwardRef<QuestionFormHandle, Props>(function Q
                     <label
                       key={opt.value}
                       className={`qf-chip${value === opt.value ? ' qf-chip-on' : ''}`}
-                      title={opt.description}
+                      title={optionTooltip(q.id, opt)}
                     >
                       <input
                         type="radio"
@@ -192,7 +217,7 @@ export const QuestionFormView = forwardRef<QuestionFormHandle, Props>(function Q
                     return (
                       <label
                         key={opt.value}
-                        title={opt.description}
+                        title={optionTooltip(q.id, opt)}
                         className={`qf-chip${on ? ' qf-chip-on' : ''}${maxed ? ' qf-chip-disabled' : ''}`}
                       >
                         <input
@@ -227,24 +252,40 @@ export const QuestionFormView = forwardRef<QuestionFormHandle, Props>(function Q
                 </select>
               ) : null}
               {q.type === 'text' ? (
-                <input
-                  type="text"
-                  className="qf-input"
-                  value={typeof value === 'string' ? value : ''}
-                  placeholder={q.placeholder}
-                  disabled={locked}
-                  onChange={(e) => update(q.id, e.target.value)}
-                />
+                <>
+                  <input
+                    type="text"
+                    className="qf-input"
+                    value={typeof value === 'string' ? value : ''}
+                    placeholder={q.placeholder}
+                    disabled={locked}
+                    onChange={(e) => update(q.id, e.target.value)}
+                  />
+                  <SuggestionButton
+                    placeholder={q.placeholder}
+                    value={value}
+                    locked={locked}
+                    onUse={(s) => update(q.id, s)}
+                  />
+                </>
               ) : null}
               {q.type === 'textarea' ? (
-                <textarea
-                  className="qf-textarea"
-                  value={typeof value === 'string' ? value : ''}
-                  placeholder={q.placeholder}
-                  disabled={locked}
-                  rows={3}
-                  onChange={(e) => update(q.id, e.target.value)}
-                />
+                <>
+                  <textarea
+                    className="qf-textarea"
+                    value={typeof value === 'string' ? value : ''}
+                    placeholder={q.placeholder}
+                    disabled={locked}
+                    rows={3}
+                    onChange={(e) => update(q.id, e.target.value)}
+                  />
+                  <SuggestionButton
+                    placeholder={q.placeholder}
+                    value={value}
+                    locked={locked}
+                    onUse={(s) => update(q.id, s)}
+                  />
+                </>
               ) : null}
               {q.type === 'direction-cards' && q.cards && q.cards.length > 0 ? (
                 <div className="qf-direction-cards">
@@ -290,6 +331,55 @@ export const QuestionFormView = forwardRef<QuestionFormHandle, Props>(function Q
     </div>
   );
 });
+
+// Leading "for example" markers across the locales we ship. A placeholder
+// that opens with one of these is a sample value, not an instruction, so we
+// can offer to drop it straight into the field. Matched case-insensitively at
+// the very start, followed by an optional separator (":", ".", "-", "—").
+const EXAMPLE_PREFIX_RE =
+  /^\s*(?:e\.?\s?g\.?|ex\.?|e[xj]\.?|p\.?\s?e[xj]\.?|por\s+exemplo|por\s+ejemplo|par\s+ex\.?|z\.?\s?b\.?|ad\s+es\.?|örn\.?|np\.?|напр\.?|例如|例|예시|예|مثال|مثل[اًه]|เช่น|misalnya|mis\.?|pl\.?)\s*[:：.．\-—]*\s+/i;
+
+// Pull the usable sample text out of an "e.g. …" / "ex.: …" placeholder.
+// Returns null when the placeholder isn't an example (so no button shows).
+export function extractPlaceholderSuggestion(placeholder?: string): string | null {
+  if (!placeholder) return null;
+  const m = EXAMPLE_PREFIX_RE.exec(placeholder);
+  if (!m) return null;
+  const suggestion = placeholder.slice(m[0].length).trim();
+  return suggestion.length > 0 ? suggestion : null;
+}
+
+// One-click "use this example" affordance for text/textarea fields whose
+// placeholder is a sample. Hidden once the field already has content so it
+// never clobbers something the user typed.
+function SuggestionButton({
+  placeholder,
+  value,
+  locked,
+  onUse,
+}: {
+  placeholder?: string;
+  value: string | string[] | undefined;
+  locked: boolean;
+  onUse: (suggestion: string) => void;
+}) {
+  const t = useT();
+  if (locked) return null;
+  const suggestion = extractPlaceholderSuggestion(placeholder);
+  if (!suggestion) return null;
+  const filled = typeof value === 'string' && value.trim().length > 0;
+  if (filled) return null;
+  return (
+    <button
+      type="button"
+      className="qf-suggest-btn"
+      onClick={() => onUse(suggestion)}
+      title={suggestion}
+    >
+      {t('qf.useSuggestion')}
+    </button>
+  );
+}
 
 function OptionCopy({ option }: { option: FormOption }) {
   return (

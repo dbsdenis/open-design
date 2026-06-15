@@ -17,6 +17,7 @@ import {
   proxyDispatcherRequestInit,
   redactSecrets,
   resolveConnectionTestTimeoutMs,
+  resolveProviderTimeoutMs,
   testAgentConnection,
   testProviderConnection,
   validateBaseUrlResolved,
@@ -1120,6 +1121,45 @@ describe('POST /api/test/connection provider mode', () => {
       expect(body.kind).toBe('success');
       vi.unstubAllGlobals();
     }
+  });
+
+  it('allows local Ollama connection tests without an API key', async () => {
+    const fetchMock = passThroughOrUpstream(() =>
+      jsonResponse({ message: { role: 'assistant', content: 'ok' } }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const res = await realFetch(`${baseUrl}/api/test/connection`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        mode: 'provider',
+        protocol: 'ollama',
+        baseUrl: 'http://localhost:11434',
+        apiKey: '',
+        model: 'gemma3:4b',
+      }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body.ok).toBe(true);
+    expect(body.kind).toBe('success');
+    vi.unstubAllGlobals();
+  });
+
+  it('still requires an API key for non-loopback Ollama connection tests', async () => {
+    const res = await realFetch(`${baseUrl}/api/test/connection`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        mode: 'provider',
+        protocol: 'ollama',
+        baseUrl: 'https://ollama.com',
+        apiKey: '',
+        model: 'gpt-oss:120b',
+      }),
+    });
+    expect(res.status).toBe(400);
   });
 
   it('reports forbidden for internal IPv6 base URLs without calling fetch', async () => {
@@ -3569,6 +3609,30 @@ describe('connection test timeout overrides', () => {
     } finally {
       warn.mockRestore();
     }
+  });
+});
+
+describe('resolveProviderTimeoutMs', () => {
+  it('gives loopback Ollama the larger local cold-load budget', () => {
+    for (const hostname of ['localhost', '127.0.0.1', '::1']) {
+      expect(resolveProviderTimeoutMs('ollama', hostname, {})).toBe(60_000);
+    }
+  });
+
+  it('keeps the aggressive cloud budget for non-loopback Ollama', () => {
+    expect(resolveProviderTimeoutMs('ollama', 'ollama.com', {})).toBe(12_000);
+  });
+
+  it('keeps the aggressive cloud budget for non-Ollama loopback providers', () => {
+    expect(resolveProviderTimeoutMs('openai', 'localhost', {})).toBe(12_000);
+  });
+
+  it('lets the explicit env override win over the local default', () => {
+    expect(
+      resolveProviderTimeoutMs('ollama', 'localhost', {
+        OD_CONNECTION_TEST_PROVIDER_TIMEOUT_MS: '5000',
+      }),
+    ).toBe(5_000);
   });
 });
 

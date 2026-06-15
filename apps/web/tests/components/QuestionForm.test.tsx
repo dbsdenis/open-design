@@ -2,7 +2,11 @@
 
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { QuestionFormView, parseSubmittedAnswers } from '../../src/components/QuestionForm';
+import {
+  QuestionFormView,
+  extractPlaceholderSuggestion,
+  parseSubmittedAnswers,
+} from '../../src/components/QuestionForm';
 import type { QuestionForm } from '../../src/artifacts/question-form';
 
 const form: QuestionForm = {
@@ -271,5 +275,90 @@ describe('QuestionFormView', () => {
       '- Primary surface: Mobile (iOS/Android) [value: mobile]',
     );
     expect(onSubmit.mock.calls[0]?.[1]).toEqual({ platform: 'mobile' });
+  });
+
+  it('offers and applies the example placeholder as a one-click suggestion', () => {
+    const suggestionForm = {
+      id: 'task-type',
+      title: 'Choose the task type',
+      questions: [
+        {
+          id: 'audience',
+          label: 'Who is this for?',
+          type: 'text',
+          placeholder: 'e.g. early-stage investors, dev-tools buyers',
+        },
+      ],
+    } as QuestionForm;
+
+    const onSubmit = vi.fn();
+    render(<QuestionFormView form={suggestionForm} interactive onSubmit={onSubmit} />);
+
+    const button = screen.getByRole('button', { name: 'Use suggestion' });
+    fireEvent.click(button);
+
+    const input = screen.getByRole('textbox') as HTMLInputElement;
+    expect(input.value).toBe('early-stage investors, dev-tools buyers');
+    // Once the field has content the affordance disappears so it can't clobber
+    // what the user now has.
+    expect(screen.queryByRole('button', { name: 'Use suggestion' })).toBeNull();
+  });
+
+  it('does not offer a suggestion when the placeholder is a plain instruction', () => {
+    const plainForm = {
+      id: 'task-type',
+      title: 'Choose the task type',
+      questions: [
+        { id: 'audience', label: 'Who is this for?', type: 'text', placeholder: 'Your audience' },
+      ],
+    } as QuestionForm;
+
+    render(<QuestionFormView form={plainForm} interactive onSubmit={vi.fn()} />);
+    expect(screen.queryByRole('button', { name: 'Use suggestion' })).toBeNull();
+  });
+
+  it('gives canonical task-type chips an explanatory tooltip', () => {
+    const taskTypeForm = {
+      id: 'taskType',
+      title: 'Choose the task type',
+      questions: [
+        {
+          id: 'taskType',
+          label: 'What should I build?',
+          type: 'radio',
+          required: true,
+          options: [
+            { label: 'Prototype', value: 'Prototype' },
+            { label: 'HyperFrames', value: 'HyperFrames' },
+          ],
+        },
+      ],
+    } as QuestionForm;
+
+    const { container } = render(
+      <QuestionFormView form={taskTypeForm} interactive onSubmit={vi.fn()} />,
+    );
+
+    const chips = container.querySelectorAll('.qf-chip');
+    expect(chips[0]?.getAttribute('title')).toContain('clickable');
+    expect(chips[1]?.getAttribute('title')).toContain('device frames');
+  });
+});
+
+describe('extractPlaceholderSuggestion', () => {
+  it('strips the example marker across locale variants', () => {
+    expect(extractPlaceholderSuggestion('e.g. 8 slides, 1 landing')).toBe('8 slides, 1 landing');
+    expect(extractPlaceholderSuggestion('ex.: microempreendedores, contadores')).toBe(
+      'microempreendedores, contadores',
+    );
+    expect(extractPlaceholderSuggestion('p. ej. inversores, compradores')).toBe(
+      'inversores, compradores',
+    );
+  });
+
+  it('returns null for non-example placeholders and empty input', () => {
+    expect(extractPlaceholderSuggestion('Your audience')).toBeNull();
+    expect(extractPlaceholderSuggestion('')).toBeNull();
+    expect(extractPlaceholderSuggestion(undefined)).toBeNull();
   });
 });
