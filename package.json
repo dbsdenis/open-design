@@ -10,7 +10,7 @@
     "od": "./apps/daemon/bin/od.mjs"
   },
   "scripts": {
-    "dev": "pnpm exec tools-dev run web",
+    "dev:web": "pnpm exec tools-dev run web",
     "postinstall": "node ./scripts/postinstall.mjs",
     "tools-dev": "pnpm exec tools-dev",
     "tools-pack": "pnpm exec tools-pack",
